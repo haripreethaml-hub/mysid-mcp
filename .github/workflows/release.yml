@@ -109,7 +109,30 @@ jobs:
       - name: Check that it runs
         # The x86_64 macOS build runs on the arm64 runner through Rosetta.
         run: |
-          ./rust-mcp/target/${{ matrix.target }}/release/mysid help | head -3
+          if [ "${{ matrix.musl }}" = "true" ]; then
+            cat > "$RUNNER_TEMP/musl-probe.rs" <<'EOF'
+          fn main() {
+              println!("musl runtime works");
+          }
+          EOF
+            rustc --target "${{ matrix.target }}" -C linker=musl-gcc "$RUNNER_TEMP/musl-probe.rs" -o "$RUNNER_TEMP/musl-probe"
+            "$RUNNER_TEMP/musl-probe" > "$RUNNER_TEMP/musl-probe.txt"
+            cat "$RUNNER_TEMP/musl-probe.txt"
+          fi
+          set +e
+          ./rust-mcp/target/${{ matrix.target }}/release/mysid help > "$RUNNER_TEMP/mysid-help.txt"
+          result=$?
+          set -e
+          if [ "$result" -ne 0 ]; then
+            echo "mysid help exited with status $result"
+            if [ "${{ matrix.musl }}" = "true" ]; then
+              sudo apt-get update
+              sudo apt-get install -y gdb
+              gdb --batch --quiet -ex 'set pagination off' -ex run -ex bt --args ./rust-mcp/target/${{ matrix.target }}/release/mysid help || true
+            fi
+            exit "$result"
+          fi
+          head -3 "$RUNNER_TEMP/mysid-help.txt"
           if [ "${{ matrix.musl }}" = "true" ]; then
             file rust-mcp/target/${{ matrix.target }}/release/mysid | grep -q 'statically linked'
           fi
@@ -131,8 +154,7 @@ jobs:
   publish:
     name: Publish rolling release
     needs: [build-windows, build-unix]
-    # Windows is published even when a Linux or macOS build fails; those files are added when they built.
-    if: ${{ always() && needs.build-windows.result == 'success' }}
+    if: ${{ needs.build-windows.result == 'success' && needs.build-unix.result == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
