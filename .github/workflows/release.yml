@@ -75,7 +75,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust Toolchain
+        if: ${{ !matrix.musl }}
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Rust Toolchain for musl
+        if: ${{ matrix.musl }}
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           targets: ${{ matrix.target }}
 
